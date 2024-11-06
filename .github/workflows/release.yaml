@@ -27,6 +27,9 @@ jobs:
           echo "OUTPUT_FILENAME=$OUTPUT_FILENAME" >> $GITHUB_ENV
           echo "Filename: ${OUTPUT_FILENAME}"
 
+      - name: Check version
+        run: ldd --version
+
       - name: Build binary
         run: cargo build --release
 
