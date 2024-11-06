@@ -1,0 +1,84 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      build-binary:
+        description: 'Build Binary'
+        required: false
+        type: boolean
+        default: true
+
+jobs:
+
+  build-binary:
+    name: Build binary
+    runs-on: ubuntu-latest-x64-16x
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+
+      - name: Prepare output filename
+        run: |
+          OUTPUT_FILENAME="glibc-tests.tar.gz"
+          echo "OUTPUT_FILENAME=$OUTPUT_FILENAME" >> $GITHUB_ENV
+          echo "Filename: ${OUTPUT_FILENAME}"
+
+      - name: Build binary
+        run: cargo build --release
+
+      - name: Prepare artifacts
+        run: |
+          mkdir -p artifacts
+          tar -czf "artifacts/${OUTPUT_FILENAME}" -C target/release glibc-tests
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4.3.1
+        with:
+          name: ${{ env.OUTPUT_FILENAME }}
+          path: artifacts/${{ env.OUTPUT_FILENAME }}
+
+
+    name: Draft release
+    if: ${{ github.event.inputs.draft-release == 'true' || github.event_name == 'push'}} # when manually triggered or version tagged
+    needs: [extract-version, build-binary]
+    runs-on: warp-ubuntu-latest-x64-16x
+    env:
+      VERSION: ${{ needs.extract-version.outputs.VERSION }}
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+          path: artifacts
+
+      - name: Record artifacts checksums
+        working-directory: artifacts
+        run: |
+          find ./ || true
+          for file in *; do sha256sum "$file" >> sha256sums.txt; done;
+          cat sha256sums.txt
+
+      - name: Create release draft
+        uses: softprops/action-gh-release@v2.0.5
+        id: create-release-draft
+        with:
+          draft: true
+          files: artifacts/*
+          generate_release_notes: true
+          name: ${{ env.VERSION }}
+          tag_name: ${{ env.VERSION }}
+
+      - name: Write Github Step Summary
+        run: |
+          echo "---"
+          echo "### Release Draft: ${{ env.VERSION }}" >> $GITHUB_STEP_SUMMARY
+          echo "${{ steps.create-release-draft.outputs.url }}" >> $GITHUB_STEP_SUMMARY
